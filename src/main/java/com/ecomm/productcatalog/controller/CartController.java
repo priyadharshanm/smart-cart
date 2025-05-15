@@ -29,6 +29,7 @@ public class CartController {
     @PostMapping("/add/{productId}")
     public void addToCart(@AuthenticationPrincipal UserDetails userDetails,
                           @PathVariable String productId) {
+        System.out.println("POST /api/cart/add/" + productId);
 
         User user = userRepo.findByUsername(userDetails.getUsername()).orElseThrow();
         Product product = productRepo.findById(productId).orElseThrow();
@@ -36,11 +37,12 @@ public class CartController {
         CartItem existingItem = cartRepo.findByUserIdAndProductId(user.getId(), productId);
 
         if (existingItem != null) {
+            System.out.println("Item already in cart. Incrementing quantity.");
             existingItem.setQuantity(existingItem.getQuantity() + 1);
             cartRepo.save(existingItem);
         } else {
+            System.out.println("Adding new item to cart.");
             CartItem newItem = new CartItem(user.getId(), product.getId(), 1);
-
             cartRepo.save(newItem);
         }
     }
@@ -49,34 +51,55 @@ public class CartController {
     public void updateQuantity(@AuthenticationPrincipal UserDetails userDetails,
                                @PathVariable String productId,
                                @RequestParam int quantity) {
-        if (quantity < 1) return;
+        System.out.println("PUT /api/cart/set-quantity/" + productId + "?quantity=" + quantity);
 
         User user = userRepo.findByUsername(userDetails.getUsername()).orElseThrow();
         CartItem item = cartRepo.findByUserIdAndProductId(user.getId(), productId);
-        if (item != null) {
-            item.setQuantity(quantity);
-            cartRepo.save(item);
+
+        if (quantity < 1) {
+            if (item != null) {
+                System.out.println("Quantity is 0. Removing item from cart.");
+                cartRepo.deleteByUserIdAndProductId(user.getId(), productId);
+            } else {
+                System.out.println("Quantity is 0 but item not in cart. Nothing to delete.");
+            }
+        } else {
+            if (item != null) {
+                System.out.println("Item exists. Updating quantity to: " + quantity);
+                item.setQuantity(quantity);
+                cartRepo.save(item);
+            } else {
+                System.out.println("Item not in cart. Creating new item with quantity: " + quantity);
+                CartItem newItem = new CartItem(user.getId(), productId, quantity);
+                cartRepo.save(newItem);
+            }
         }
     }
 
+
     @GetMapping
     public List<CartItem> getCart(@AuthenticationPrincipal UserDetails userDetails) {
+        System.out.println("GET /api/cart");
+
         User user = userRepo.findByUsername(userDetails.getUsername()).orElseThrow();
         List<CartItem> items = cartRepo.findByUserId(user.getId());
 
-        // Populate each CartItem with its corresponding Product
         for (CartItem item : items) {
             productRepo.findById(item.getProductId()).ifPresent(item::setProduct);
         }
 
+        System.out.println("Returning " + items.size() + " cart items.");
         return items;
     }
-
 
     @DeleteMapping("/remove/{productId}")
     public void removeFromCart(@AuthenticationPrincipal UserDetails userDetails,
                                @PathVariable String productId) {
+        System.out.println("DELETE /api/cart/remove/" + productId);
+
         User user = userRepo.findByUsername(userDetails.getUsername()).orElseThrow();
         cartRepo.deleteByUserIdAndProductId(user.getId(), productId);
+
+        System.out.println("Item removed from cart.");
     }
 }

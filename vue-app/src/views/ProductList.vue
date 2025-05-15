@@ -1,7 +1,43 @@
 
 <template>
   <div class="product-page">
+    
     <h1>Product List</h1>
+    <div class="ai-suggestions">
+  <input
+    v-model="prompt"
+    placeholder="Describe what you need (e.g., breakfast kit)"
+    class="ai-input"
+  />
+  <button @click="getCartSuggestions">Get Suggestions</button>
+</div>
+<Teleport to="body">
+  <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+    <div class="modal">
+      <h2>Suggested Products</h2>
+      <ul>
+  <li v-for="product in suggestedProducts" :key="product.id" class="suggested-item">
+    <div class="suggested-info">
+      <span>{{ product.productName }}</span>
+    </div>
+    <div class="quantity-controls">
+      <button @click="setQuantity(product.id, getSuggestedQuantity(product.id) - 1)">-</button>
+      <span>{{ getSuggestedQuantity(product.id) }}</span>
+      <button @click="setQuantity(product.id, getSuggestedQuantity(product.id) + 1)">+</button>
+    </div>
+  </li>
+</ul>
+
+
+
+<div class="modal-actions">
+  <button @click="updateCartWithSuggestions">Update Cart</button>
+  <button @click="closeModal">Close</button>
+</div>
+
+    </div>
+  </div>
+</Teleport>
 
     <div class="product-grid">
      <div v-for="product in products" :key="product.id" class="product-card">
@@ -42,23 +78,8 @@
   <span>Page {{ currentPage + 1 }}</span>
   <button @click="goToNextPage">Next</button>
 </div>
-<div class="ai-suggestions">
-  <input
-    v-model="prompt"
-    placeholder="Describe what you need (e.g., breakfast kit)"
-    class="ai-input"
-  />
-  <button @click="getCartSuggestions">Get Suggestions</button>
-</div>
 
-<div v-if="suggestedProducts.length">
-  <h3>AI Suggestions</h3>
-  <ul>
-    <li v-for="product in suggestedProducts" :key="product.id">
-      {{ product.productName }}
-    </li>
-  </ul>
-</div>
+
 
   </div>
 </template>
@@ -119,14 +140,72 @@ const changeQuantity = async (productId, quantity) => {
 const prompt = ref('')
 const suggestedProducts = ref([])
 
+const showModal = ref(false)
+const suggestionQuantities = ref({})
+
+const setQuantity = (productId, quantity) => {
+  suggestionQuantities.value[productId] = Math.max(0, quantity)
+}
+
+
+
 const getCartSuggestions = async () => {
   try {
     const res = await api.post('/ai/cart-suggestions', { prompt: prompt.value })
     suggestedProducts.value = res.data
+
+    // Initialize suggestionQuantities with current cart quantities
+    suggestionQuantities.value = {}
+    for (const product of suggestedProducts.value) {
+      const item = cart.value.find(ci => ci.product.id === product.id)
+      suggestionQuantities.value[product.id] = item ? item.quantity : 0
+    }
+
+    showModal.value = true
   } catch (err) {
     console.error('Failed to fetch suggestions:', err)
   }
 }
+
+const closeModal = () => {
+  suggestedProducts.value = []
+  showModal.value = false
+}
+
+
+const updateCartWithSuggestions = async () => {
+  for (const product of suggestedProducts.value) {
+    const qty = getSuggestedQuantity(product.id)
+
+    if (qty < 1) {
+      await api.delete(`/cart/remove/${product.id}`)
+    } else {
+      await api.put(`/cart/set-quantity/${product.id}?quantity=${qty}`)
+    }
+  }
+
+  await fetchCart()
+  closeModal()
+}
+
+
+
+const getSuggestedQuantity = (productId) => {
+  console.log('Updating cart with:', suggestionQuantities.value)
+
+  return suggestionQuantities.value[productId] || 0
+
+}
+
+const addSuggestedToCart = async (productId) => {
+  const qty = getSuggestedQuantity(productId)
+  if (qty > 0) {
+    await api.put(`/cart/set-quantity/${productId}?quantity=${qty}`)
+    await fetchCart()
+    suggestionQuantities.value[productId] = 0 // reset
+  }
+}
+
 const goToNextPage = async () => {
   currentPage.value++
   await fetchProducts()
@@ -217,6 +296,40 @@ button {
   font-size: 16px;
   border-radius: 8px;
   border: 1px solid #ccc;
+}
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.modal {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+.suggested-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
 }
 
 </style>
